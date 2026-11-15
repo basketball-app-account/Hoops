@@ -42,3 +42,4 @@ svg text{fill:var(--m);font-size:9px}.log div{display:flex;justify-content:space
 @media(min-width:700px){.sb{min-height:110px;font-size:21px}.score b{font-size:60px}}
 .ov{position:fixed;inset:0;background:rgba(0,0,0,.8);z-index:20;overflow:auto;padding:calc(14px + env(safe-area-inset-top)) 14px 30px}.ov .card{max-width:800px;margin:0 auto}
 .pgp{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px;margin:12px 0}
+tr.rg td{background:#12281c}tr.rr td{background:#2c1717}tr.rg td:nth-child(3){color:var(--g);font-weight:700}tr.rr td:nth-child(3){color:var(--r);font-weight:700}
