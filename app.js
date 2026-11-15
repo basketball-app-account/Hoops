@@ -15,13 +15,22 @@ const open=()=>new Promise((r,j)=>{const q=indexedDB.open('hoopsstats',1);q.onup
 const tx=(st,m,f)=>new Promise((r,j)=>{const t=db.transaction(st,m),q=f(t.objectStore(st));t.oncomplete=()=>r(q&&q.result);t.onerror=()=>j(t.error)});
 const put=(st,o)=>tx(st,'readwrite',s=>s.put(o)),del=(st,id)=>tx(st,'readwrite',s=>s.delete(id)),all=st=>tx(st,'readonly',s=>s.getAll());
 const saveG=g=>put('games',g);
-const load=async()=>{S.players=(await all('players')).sort((a,b)=>a.name.localeCompare(b.name));S.games=await all('games')};
+const load=async()=>{S.players=(await all('players')).sort((a,b)=>a.name.localeCompare(b.name));S.games=await all('games');for(const g of S.games)if(mig(g))await saveG(g)};
 /* ---------- Statistik ---------- */
 function fin(s,sec){s.pts=s.ft1+2*s.p2+3*s.p3;s.rb=s.reb+s.oreb+s.dreb;s.ftA=s.ft1+s.ft0;s.p2A=s.p2+s.p20;s.p3A=s.p3+s.p30;s.fgM=s.p2+s.p3;s.fgA=s.p2A+s.p3A;s.sec=sec;return s}
-function stat(g,pid){const s={};T.forEach(k=>s[k]=0);for(const e of g.events)if(e.pid===pid)s[e.type]++;return fin(s,g.sec[pid]||0)}
+/* Spielzeit aus Ein-/Auswechslungen (verbleibende Spieluhr-Zeit, nicht Realzeit) */
+function seg(b,g,s,q,t){if(s.q===q)b[s.q]+=Math.max(0,s.t-t);else{b[s.q]+=s.t;b[q]+=Math.max(0,g.qlen-t)}}
+function tm(g,pid){const b=[0,0,0,0,0];let st={on:false,q:0,t:0},n=0;
+ for(const e of g.subs||[]){if(e.pid!==pid)continue;if(e.k==='in'){if(!st.on){st={on:true,q:e.q,t:e.t};n++}}else if(st.on){seg(b,g,st,e.q,e.t);st.on=false}}
+ if(st.on)seg(b,g,st,g.q,g.clock);return{b,on:st.on,n}}
+const secOf=(g,id)=>(g.sec0&&g.sec0[id]||0)+tm(g,id).b.reduce((a,x)=>a+x,0);
+const onc=g=>g.roster.filter(id=>tm(g,id).on);
+const gids=g=>[...g.roster,...(g.events.some(e=>e.pid==='other')?['other']:[])];
+function mig(g){if(g.subs)return false;g.subs=[];g.sec0=g.sec||{};if(g.status!=='final')(g.on||[]).forEach(id=>g.subs.push({id:uid(),pid:id,k:'in',q:g.q||1,t:Math.round(g.clock||0)}));delete g.on;delete g.sec;return true}
+function stat(g,pid){const s={};T.forEach(k=>s[k]=0);for(const e of g.events)if(e.pid===pid)s[e.type]++;const m=tm(g,pid);fin(s,secOf(g,pid));s.qb=m.b;s.nsub=m.n;return s}
 const played=s=>s.sec>0||T.some(k=>s[k]>0);
 const tpts=g=>g.events.reduce((a,e)=>a+(e.type==='ft1'?1:e.type==='p2'?2:e.type==='p3'?3:0),0);
-const pname=id=>{const p=S.players.find(x=>x.id===id);return p?p.name:'(gelöscht)'};
+const pname=id=>{if(id==='other')return'Nicht zugeordnet';const p=S.players.find(x=>x.id===id);return p?p.name:'(gelöscht)'};
 function row(p,gs){const a={};T.forEach(k=>a[k]=0);let sec=0,gp=0;
  gs.forEach(g=>{const s=stat(g,p.id);if(played(s)){gp++;T.forEach(k=>a[k]+=s[k]);sec+=s.sec}});fin(a,sec);const d=x=>gp?x/gp:0;
  return{p,gp,pts:a.pts,ppg:d(a.pts),rb:a.rb,rpg:d(a.rb),ast:a.ast,apg:d(a.ast),stl:a.stl,spg:d(a.stl),blk:a.blk,bpg:d(a.blk),tov:a.tov,tpg:d(a.tov),pf:a.pf,fpg:d(a.pf),min:sec/60,mpg:d(sec/60),ftp:pc(a.ft1,a.ftA),p2p:pc(a.p2,a.p2A),p3p:pc(a.p3,a.p3A),fgp:pc(a.fgM,a.fgA),a}}
@@ -32,9 +41,9 @@ function fgames(){let g=S.games.filter(x=>x.status==='final').sort((a,b)=>a.date
  if(F.mode==='last')g=g.slice(-F.n);if(F.mode==='range')g=g.filter(x=>(!F.from||x.date>=F.from)&&(!F.to||x.date<=F.to));if(F.mode==='pick')g=g.filter(x=>F.picks.includes(x.id));return g}
 /* ---------- Spiel / Uhr ---------- */
 const cur=()=>S.games.find(g=>g.id===V.id);
-function tick(g){if(!g.run)return;const n=Date.now(),dt=Math.min((n-g.last)/1000,5);g.last=n;const d=Math.min(dt,g.clock);g.clock-=d;g.on.forEach(id=>g.sec[id]=(g.sec[id]||0)+d);if(g.clock<=0){g.clock=0;g.run=false;saveG(g)}}
+function tick(g){if(!g.run)return;const n=Date.now(),dt=Math.min((n-g.last)/1000,5);g.last=n;g.clock-=Math.min(dt,g.clock);if(g.clock<=0){g.clock=0;g.run=false;saveG(g)}}
 let ctr=0;setInterval(()=>{const g=V.id&&cur();if(!g||!g.run)return;tick(g);const c=$('#clk');if(c)c.textContent=fmt(g.clock);
- document.querySelectorAll('[data-m]').forEach(e=>e.textContent=fmt(g.sec[e.dataset.m]||0));if(!g.run)render();if(++ctr%20===0)saveG(g)},250);
+ document.querySelectorAll('[data-m]').forEach(e=>e.textContent=fmt(secOf(g,e.dataset.m)));if(!g.run)render();if(++ctr%20===0)saveG(g)},250);
 /* ---------- Ansichten ---------- */
 function title(t){$('#title').textContent=t}
 function render(){window.scrollTo(0,V.keep?scrollY:0);V.keep=0;const f={home:vHome,new:vNew,players:vPlayers,game:vGame,pstat:vPstat,season:vSeason,profile:vProfile,cmp:vCmp,backup:vBackup}[V.n];M.innerHTML=f();$('#hr').textContent=''}
@@ -52,19 +61,31 @@ function vPlayers(){title('Spieler');const e=S.players.find(p=>p.id===EDIT);
  return `<div class="card"><b>${e?'Spieler bearbeiten':'Neuer Spieler'}</b><label>Name</label><input id="pn" value="${esc(e?.name||'')}"><label>Rückennummer</label><input id="pr" inputmode="numeric" value="${esc(e?.num||'')}"><label>Profilbild (optional)</label><div class="row"><div class="av">${(PIC??e?.pic)?`<img src="${PIC??e.pic}">`:'?'}</div><button class="btn" data-a="pickpic">Bild wählen</button>${(PIC??e?.pic)?'<button class="btn" data-a="nopic">Entfernen</button>':''}</div><br><div class="row"><button class="btn p" data-a="savep">${e?'Speichern':'Hinzufügen'}</button>${e?'<button class="btn" data-a="cancelp">Abbrechen</button>':''}</div></div>
  ${S.players.map(p=>`<div class="gi"><div class="av">${p.pic?`<img src="${p.pic}">`:esc(p.num)}</div><div class="main"><b>${esc(p.name)}</b><br><small>#${esc(p.num)}</small></div><button class="btn s" data-a="editp" data-id="${p.id}">Bearbeiten</button><button class="btn s d" data-a="delp" data-id="${p.id}">Löschen</button></div>`).join('')||'<p class="mut">Noch keine Spieler.</p>'}`}
 function scoreBar(g){return `<div class="score"><div><small>${esc(g.team)}</small><b>${tpts(g)}</b></div><div><div class="q">${[1,2,3,4].map(q=>`<button class="${g.q==q?'on':''}" data-a="q" data-q="${q}">Q${q}</button>`).join('')}</div><button id="clk" class="time" data-a="setclk">${fmt(g.clock)}</button><button class="go ${g.run?'pause':''}" data-a="run">${g.run?'Pause':'Start'}</button></div><div><small>${esc(g.opp)}</small><b>${g.oppScore}</b><div class="op">${[1,2,3,-1].map(d=>`<button data-a="opp" data-d="${d}">${d>0?'+':'−'}${Math.abs(d)}</button>`).join('')}</div></div></div>`}
-function vGame(){const g=cur();title(g.team+' – '+g.opp);
- const tab=V.tab||'p',tabs=`<div class="tabs"><button class="btn ${tab=='p'?'p':''}" data-a="tab" data-t="p">Spieler</button><button class="btn ${tab=='b'?'p':''}" data-a="tab" data-t="b">Box Score</button></div>`;
- let body;if(tab==='p')body=`<div class="pg">${g.roster.map(id=>{const p=S.players.find(x=>x.id===id)||{name:'(gelöscht)',num:'?'},s=stat(g,id),on=g.on.includes(id);
-  return `<div class="pc ${on?'on':''}" data-a="pl" data-id="${id}"><div class="top"><div class="av">${p.pic?`<img src="${p.pic}">`:esc(p.num)}</div><div><b>${esc(p.name)}</b><br><small>#${esc(p.num)}</small></div><div class="pt">${s.pts}</div></div><div class="mini"><span>REB ${s.rb}</span><span>AST ${s.ast}</span><span>STL ${s.stl}</span><span>BLK ${s.blk}</span><span>PF ${s.pf}</span></div><div class="row"><button class="btn s ${on?'p':''} sp" data-a="court" data-id="${id}">${on?'Auf dem Feld':'Bank'}</button><small data-m="${id}">${fmt(g.sec[id]||0)}</small></div></div>`}).join('')}</div>`;
+function vGame(){const g=cur();title(g.team+' – '+g.opp);const tab=V.tab||'b',oc=onc(g),ben=g.roster.filter(id=>!oc.includes(id));
+ const tabs=`<div class="tabs">${[['b','Board'],['p','Spieler'],['w','Wechsel'],['x','Box Score']].map(([k,t])=>`<button class="btn ${tab==k?'p':''}" data-a="tab" data-t="${k}">${t}</button>`).join('')}</div>`;
+ const bb=(k,c)=>`<button class="sb ${c}" data-a="pickp" data-t="${k}">${LBL[k]}<em>${SUB[k]||''}</em></button>`;
+ const row=id=>{const m=tm(g,id);return `<div class="gi"><div class="main"><b>${esc(pname(id))}</b> <small data-m="${id}">${fmt(secOf(g,id))}</small><br><small>${m.n}× eingewechselt</small></div><button class="btn s ${m.on?'d':'p'}" data-a="court" data-id="${id}">${m.on?'Auswechseln':'Einwechseln'}</button></div>`};
+ let body;
+ if(tab==='b')body=`<div class="card"><small>Auf dem Feld (${oc.length})</small><div class="chips" style="margin-top:6px">${oc.map(id=>`<button class="chip on" data-a="pl" data-id="${id}">${esc(pname(id))}</button>`).join('')||'<span class="mut">Niemand – unter „Wechsel“ einwechseln</span>'}</div></div>
+ <div class="sg g3">${bb('ft1','h')}${bb('p2','h')}${bb('p3','h')}${bb('ft0','x')}${bb('p20','x')}${bb('p30','x')}</div>
+ <div class="sg g4">${['reb','oreb','dreb','ast','stl','blk','tov','pf'].map(k=>bb(k,'')).join('')}</div>
+ <button class="btn p" data-a="undoall" style="width:100%;min-height:54px">↶ Letzte Aktion rückgängig</button>
+ <div class="card log" style="margin-top:12px"><small>Letzte Aktionen – Namen antippen = Spieler ändern</small>${g.events.map((e,i)=>[e,i]).slice(-6).reverse().map(([e,i])=>`<div><span>Q${e.q} ${fmt(e.t)} · <b data-a="reas" data-i="${i}" style="color:var(--o)">${esc(pname(e.pid))}</b> · ${LBL[e.type]} ${SUB[e.type]||''}</span><button class="btn s d" data-a="delev" data-i="${i}">✕</button></div>`).join('')||'<div class="mut">Noch keine Aktionen</div>'}</div>`;
+ else if(tab==='p')body=`<div class="pg">${g.roster.map(id=>{const p=S.players.find(x=>x.id===id)||{name:'(gelöscht)',num:'?'},s=stat(g,id),on=oc.includes(id);
+  return `<div class="pc ${on?'on':''}" data-a="pl" data-id="${id}"><div class="top"><div class="av">${p.pic?`<img src="${p.pic}">`:esc(p.num)}</div><div><b>${esc(p.name)}</b><br><small>#${esc(p.num)}</small></div><div class="pt">${s.pts}</div></div><div class="mini"><span>REB ${s.rb}</span><span>AST ${s.ast}</span><span>STL ${s.stl}</span><span>BLK ${s.blk}</span><span>PF ${s.pf}</span></div><div class="row"><button class="btn s ${on?'p':''} sp" data-a="court" data-id="${id}">${on?'Auf dem Feld':'Bank'}</button><small data-m="${id}">${fmt(secOf(g,id))}</small></div></div>`}).join('')}</div>`;
+ else if(tab==='w')body=`<h2>Auf dem Feld</h2>${oc.map(row).join('')||'<p class="mut">Niemand. Tippe unten bei der Bank auf „Einwechseln“ (Startaufstellung vor Spielbeginn).</p>'}<h2>Bank</h2>${ben.map(row).join('')||'<p class="mut">Niemand</p>'}
+ <h2>Wechsel-Protokoll</h2><div class="card log"><small>Zeit antippen = korrigieren</small>${g.subs.map((e,i)=>[e,i]).reverse().slice(0,30).map(([e,i])=>`<div><span>Q${e.q} <b data-a="subt" data-i="${i}" style="color:var(--o)">${fmt(e.t)}</b> · ${esc(pname(e.pid))} · ${e.k==='in'?'ein':'aus'}</span><button class="btn s d" data-a="delsub" data-i="${i}">✕</button></div>`).join('')||'<div class="mut">Noch keine Wechsel</div>'}</div><button class="btn" data-a="undosub">↶ Letzten Wechsel rückgängig</button>`;
  else body=box(g);
- return `${scoreBar(g)}${tabs}${body}<div class="row" style="margin-top:14px">${g.status!=='final'?'<button class="btn p" data-a="finish">Spiel abschließen</button>':'<span class="badge W">Abgeschlossen</span>'}<button class="btn" data-a="exg" data-id="${g.id}">CSV</button><button class="btn" data-a="go" data-v="home">Zurück</button></div>`}
-function box(g){const rows=g.roster.map(id=>[pname(id),stat(g,id)]),tot=T.reduce((o,k)=>(o[k]=rows.reduce((a,r)=>a+r[1][k],0),o),{});fin(tot,rows.reduce((a,r)=>a+r[1].sec,0));
+ const pk=V.pick?`<div class="ov"><div class="card"><b>${V.pick.re!=null?'Richtigen Spieler wählen':LBL[V.pick.t]+' '+(SUB[V.pick.t]||'')+' – wer?'}</b><div class="pgp">${[...oc,...ben].map(id=>`<button class="sb ${oc.includes(id)?'h':''}" data-a="assign" data-id="${id}">${esc(pname(id))}</button>`).join('')}<button class="sb" data-a="assign" data-id="other">Anderer Spieler</button></div><button class="btn" data-a="cancelpick" style="width:100%">Abbrechen</button></div></div>`:'';
+ return `${scoreBar(g)}${tabs}${body}<div class="row" style="margin-top:14px">${g.status!=='final'?'<button class="btn p" data-a="finish">Spiel abschließen</button>':'<span class="badge W">Abgeschlossen</span>'}<button class="btn" data-a="exg" data-id="${g.id}">CSV</button><button class="btn" data-a="go" data-v="home">Zurück</button></div>${pk}`}
+function box(g){const rows=gids(g).map(id=>[pname(id),stat(g,id)]),tot=T.reduce((o,k)=>(o[k]=rows.reduce((a,r)=>a+r[1][k],0),o),{});fin(tot,rows.reduce((a,r)=>a+r[1].sec,0));
  const l=(n,s)=>`<tr><td>${esc(n)}</td><td>${fmt(s.sec)}</td><td>${s.pts}</td><td>${s.fgM}/${s.fgA}</td><td>${s.p3}/${s.p3A}</td><td>${s.ft1}/${s.ftA}</td><td>${s.rb}</td><td>${s.ast}</td><td>${s.stl}</td><td>${s.blk}</td><td>${s.tov}</td><td>${s.pf}</td></tr>`;
- return `<div class="tw"><table><thead><tr>${['Spieler','MIN','PTS','FG','3P','FT','REB','AST','STL','BLK','TO','PF'].map(h=>`<th>${h}</th>`).join('')}</tr></thead><tbody>${rows.map(r=>l(...r)).join('')}</tbody><tfoot>${l('Team',tot)}</tfoot></table></div>`}
-function vPstat(){const g=cur(),id=V.pid,p=S.players.find(x=>x.id===id)||{name:'(gelöscht)',num:'?'},s=stat(g,id),i=g.roster.indexOf(id),on=g.on.includes(id);title('#'+p.num+' '+p.name);
+ return `<div class="tw"><table><thead><tr>${['Spieler','MIN','PTS','FG','3P','FT','REB','AST','STL','BLK','TO','PF'].map(h=>`<th>${h}</th>`).join('')}</tr></thead><tbody>${rows.map(r=>l(...r)).join('')}</tbody><tfoot>${l('Team',tot)}</tfoot></table></div>
+ <h2>Spielzeit</h2><div class="tw"><table><thead><tr>${['Spieler','Q1','Q2','Q3','Q4','Gesamt','Einw.'].map(h=>`<th>${h}</th>`).join('')}</tr></thead><tbody>${g.roster.map(id=>{const s=stat(g,id);return `<tr><td>${esc(pname(id))}</td>${[1,2,3,4].map(q=>`<td>${fmt(s.qb[q])}</td>`).join('')}<td>${fmt(s.sec)}</td><td>${s.nsub}</td></tr>`}).join('')}</tbody></table></div>`}
+function vPstat(){const g=cur(),id=V.pid,p=S.players.find(x=>x.id===id)||{name:'(gelöscht)',num:'?'},s=stat(g,id),i=g.roster.indexOf(id),on=tm(g,id).on;title('#'+p.num+' '+p.name);
  const b=(k,c)=>`<button class="sb ${c}" data-a="ev" data-t="${k}">${LBL[k]}<em>${SUB[k]||s[k]}</em>${SUB[k]?`<em>${s[k]}×</em>`:''}</button>`;
  const mine=g.events.map((e,ix)=>[e,ix]).filter(x=>x[0].pid===id).reverse().slice(0,6);
- return `${scoreBar(g)}<div class="row"><button class="btn" data-a="back">‹ Übersicht</button><button class="btn" data-a="nav" data-d="-1">‹</button><button class="btn" data-a="nav" data-d="1">›</button><b class="sp" style="font-size:26px;text-align:center">${s.pts} Pkt</b><button class="btn ${on?'p':''}" data-a="court" data-id="${id}">${on?'Auf dem Feld':'Bank'} <small data-m="${id}">${fmt(g.sec[id]||0)}</small></button></div><br>
+ return `${scoreBar(g)}<div class="row"><button class="btn" data-a="back">‹ Übersicht</button><button class="btn" data-a="nav" data-d="-1">‹</button><button class="btn" data-a="nav" data-d="1">›</button><b class="sp" style="font-size:26px;text-align:center">${s.pts} Pkt</b><button class="btn ${on?'p':''}" data-a="court" data-id="${id}">${on?'Auf dem Feld':'Bank'} <small data-m="${id}">${fmt(secOf(g,id))}</small></button></div><br>
  <div class="sg g3">${b('ft1','h')}${b('p2','h')}${b('p3','h')}${b('ft0','x')}${b('p20','x')}${b('p30','x')}</div>
  <div class="sg g4">${['reb','oreb','dreb','ast','stl','blk','tov','pf'].map(k=>b(k,'')).join('')}</div>
  <div class="row"><button class="btn p sp" data-a="undo" style="min-height:58px">↶ Letzte Aktion rückgängig</button></div>
@@ -94,28 +115,34 @@ function vBackup(){title('Datensicherung');return `<div class="card"><p>Alle Dat
 function dl(name,txt,type){const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([txt],{type}));a.download=name;document.body.append(a);a.click();setTimeout(()=>{a.remove();URL.revokeObjectURL(a.href)},500)}
 const csv=rows=>'\ufeff'+rows.map(r=>r.map(c=>'"'+String(c??'').replace(/"/g,'""')+'"').join(';')).join('\n');
 const SH=['Spieler','Nr','MIN','PTS','FT','FTA','2P','2PA','3P','3PA','REB','OREB','DREB','AST','STL','BLK','TO','PF'];
-function gameCsv(g){return csv([['Datum',g.date,'Team',g.team,'Gegner',g.opp,'Ergebnis',tpts(g)+':'+g.oppScore],SH,...g.roster.map(id=>{const s=stat(g,id),p=S.players.find(x=>x.id===id)||{num:''};return[pname(id),p.num,(s.sec/60).toFixed(1),s.pts,s.ft1,s.ftA,s.p2,s.p2A,s.p3,s.p3A,s.reb+s.oreb+s.dreb,s.oreb,s.dreb,s.ast,s.stl,s.blk,s.tov,s.pf]})])}
+function gameCsv(g){return csv([['Datum',g.date,'Team',g.team,'Gegner',g.opp,'Ergebnis',tpts(g)+':'+g.oppScore],SH,...gids(g).map(id=>{const s=stat(g,id),p=S.players.find(x=>x.id===id)||{num:''};return[pname(id),p.num,(s.sec/60).toFixed(1),s.pts,s.ft1,s.ftA,s.p2,s.p2A,s.p3,s.p3A,s.reb+s.oreb+s.dreb,s.oreb,s.dreb,s.ast,s.stl,s.blk,s.tov,s.pf]})])}
 /* ---------- Aktionen ---------- */
 const go=(n,x={})=>{$('#drawer').hidden=true;V={n,...x};render()};
 const act={
  menu(){const d=$('#drawer');d.hidden=!d.hidden},go:(d)=>go(d.v),
  new(){NEW={};go('new')},nsel(d){NEW.team=$('#nt').value;NEW.opp=$('#no').value;NEW.date=$('#nd').value;NEW.q=$('#nq').value;NEW.sel=NEW.sel.includes(d.id)?NEW.sel.filter(x=>x!==d.id):[...NEW.sel,d.id];render()},
  async create(){if(!NEW.sel.length)return alert('Bitte mindestens einen Spieler wählen.');const q=Math.max(1,+$('#nq').value||10)*60;
-  const g={id:uid(),created:Date.now(),status:'draft',team:$('#nt').value.trim()||'Heim',opp:$('#no').value.trim()||'Gegner',date:$('#nd').value||today(),roster:NEW.sel,events:[],sec:{},on:[],oppScore:0,q:1,qlen:q,clock:q,run:false,last:0};
-  await saveG(g);S.games.push(g);go('game',{id:g.id,tab:'p'})},
- open(d){go('game',{id:d.id,tab:'p'})},
+  const g={id:uid(),created:Date.now(),status:'draft',team:$('#nt').value.trim()||'Heim',opp:$('#no').value.trim()||'Gegner',date:$('#nd').value||today(),roster:NEW.sel,events:[],subs:[],oppScore:0,q:1,qlen:q,clock:q,run:false,last:0};
+  await saveG(g);S.games.push(g);go('game',{id:g.id,tab:'b'})},
+ open(d){go('game',{id:d.id,tab:'b'})},
  async delg(d){const g=S.games.find(x=>x.id===d.id);if(!confirm(`Spiel gegen ${g.opp} wirklich löschen? Die Saisonstatistik wird angepasst.`))return;await del('games',d.id);S.games=S.games.filter(x=>x.id!==d.id);render()},
  tab(d){V.tab=d.t;render()},pl(d){go('pstat',{id:V.id,pid:d.id})},back(){go('game',{id:V.id,tab:'p'})},
  nav(d){const g=cur(),i=(g.roster.indexOf(V.pid)+ +d.d+g.roster.length)%g.roster.length;V.pid=g.roster[i];render()},
- court(d,el,e){const g=cur();g.on=g.on.includes(d.id)?g.on.filter(x=>x!==d.id):[...g.on,d.id];saveG(g);V.keep=1;render()},
+ court(d){const g=cur();tick(g);g.subs.push({id:uid(),pid:d.id,k:tm(g,d.id).on?'out':'in',q:g.q,t:Math.round(g.clock)});saveG(g);V.keep=1;render()},
+ pickp(d){V.pick={t:d.t};V.keep=1;render()},reas(d){V.pick={re:+d.i};V.keep=1;render()},cancelpick(){V.pick=null;V.keep=1;render()},
+ async assign(d){const g=cur(),p=V.pick;if(!p)return;if(p.re!=null)g.events[p.re].pid=d.id;else{tick(g);g.events.push({id:uid(),pid:d.id,type:p.t,q:g.q,t:Math.round(g.clock)})}V.pick=null;await saveG(g);V.keep=1;render()},
+ async undoall(){const g=cur();g.events.pop();await saveG(g);V.keep=1;render()},
+ async undosub(){const g=cur();g.subs.pop();await saveG(g);V.keep=1;render()},
+ async delsub(d){const g=cur();g.subs.splice(+d.i,1);await saveG(g);V.keep=1;render()},
+ subt(d){const g=cur(),e=g.subs[+d.i],v=prompt('Zeit korrigieren (verbleibend, mm:ss)',fmt(e.t)),m=v&&v.match(/^(\d+)(?::(\d{1,2}))?$/);if(m){e.t=(+m[1])*60+(+m[2]||0);saveG(g);V.keep=1;render()}},
  async ev(d){const g=cur();g.events.push({id:uid(),pid:V.pid,type:d.t,q:g.q,t:Math.round(g.clock)});await saveG(g);V.keep=1;render()},
  async undo(){const g=cur();for(let i=g.events.length-1;i>=0;i--)if(g.events[i].pid===V.pid){g.events.splice(i,1);await saveG(g);V.keep=1;return render()}},
  async delev(d){const g=cur();g.events.splice(+d.i,1);await saveG(g);V.keep=1;render()},
  run(){const g=cur();if(g.run){tick(g);g.run=false}else{g.run=true;g.last=Date.now()}saveG(g);V.keep=1;render()},
- q(d){const g=cur();if(g.q==d.q)return;if(g.run){tick(g);g.run=false}g.q=+d.q;g.clock=g.qlen;saveG(g);V.keep=1;render()},
+ q(d){const g=cur();if(g.q==d.q)return;if(g.run){tick(g);g.run=false}const t=Math.round(g.clock),on=onc(g);on.forEach(id=>g.subs.push({id:uid(),pid:id,k:'out',q:g.q,t}));g.q=+d.q;g.clock=g.qlen;on.forEach(id=>g.subs.push({id:uid(),pid:id,k:'in',q:g.q,t:g.qlen}));saveG(g);V.keep=1;render()},
  setclk(){const g=cur();if(g.run){tick(g);g.run=false}const v=prompt('Spielzeit einstellen (mm:ss)',fmt(g.clock));if(v){const m=v.match(/^(\d+)(?::(\d{1,2}))?$/);if(m){g.clock=(+m[1])*60+(+m[2]||0)}}saveG(g);V.keep=1;render()},
  opp(d){const g=cur();g.oppScore=Math.max(0,g.oppScore+ +d.d);saveG(g);V.keep=1;render()},
- async finish(){const g=cur();if(g.run){tick(g);g.run=false}g.status='final';await saveG(g);go('home')},
+ async finish(){const g=cur();if(g.run){tick(g);g.run=false}const t=Math.round(g.clock);onc(g).forEach(id=>g.subs.push({id:uid(),pid:id,k:'out',q:g.q,t}));g.status='final';await saveG(g);go('home')},
  /* Spieler */
  pickpic(){$('#pic').click()},nopic(){PIC='';render()},editp(d){EDIT=d.id;PIC=null;render()},cancelp(){EDIT=null;PIC=null;render()},
  async savep(){const n=$('#pn').value.trim();if(!n)return alert('Bitte einen Namen eingeben.');const e=S.players.find(p=>p.id===EDIT),o=e||{id:uid()};o.name=n;o.num=$('#pr').value.trim();if(PIC!==null)o.pic=PIC;await put('players',o);EDIT=null;PIC=null;await load();render()},

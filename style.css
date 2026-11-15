@@ -40,3 +40,5 @@ td:first-child,th:first-child{text-align:left;position:sticky;left:0;background:
 .chips{display:flex;gap:6px;flex-wrap:wrap}.chip{padding:8px 12px;border-radius:99px;border:1px solid var(--l);background:var(--c2);color:var(--t)}.chip.on{background:var(--o);color:#111;border-color:var(--o)}
 svg text{fill:var(--m);font-size:9px}.log div{display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid var(--l)}
 @media(min-width:700px){.sb{min-height:110px;font-size:21px}.score b{font-size:60px}}
+.ov{position:fixed;inset:0;background:rgba(0,0,0,.8);z-index:20;overflow:auto;padding:calc(14px + env(safe-area-inset-top)) 14px 30px}.ov .card{max-width:800px;margin:0 auto}
+.pgp{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px;margin:12px 0}
