@@ -46,12 +46,12 @@ function fgames(){let g=S.games.filter(x=>x.status==='final').sort((a,b)=>a.date
 const cur=()=>S.games.find(g=>g.id===V.id);
 /* ---------- Ansichten ---------- */
 function title(t){$('#title').textContent=t}
-function render(){window.scrollTo(0,V.keep?scrollY:0);V.keep=0;const f={home:vHome,new:vNew,players:vPlayers,leagues:vLeagues,league:vLeague,fix:vFix,game:vGame,pstat:vPstat,season:vSeason,profile:vProfile,cmp:vCmp,backup:vBackup}[V.n];M.innerHTML=f();$('#hr').textContent=''}
+function render(){window.scrollTo(0,V.keep?scrollY:0);V.keep=0;applyTheme(themeTeam());const f={home:vHome,new:vNew,players:vPlayers,theme:vTheme,leagues:vLeagues,league:vLeague,fix:vFix,game:vGame,pstat:vPstat,season:vSeason,profile:vProfile,cmp:vCmp,backup:vBackup}[V.n];M.innerHTML=f();$('#hr').textContent=''}
 function vHome(){title('Spiele');
  const gs=[...S.games].sort((a,b)=>b.date.localeCompare(a.date)||b.created-a.created),dr=gs.filter(g=>g.status!=='final'),fi=gs.filter(g=>g.status==='final');
  const item=g=>{const a=tpts(g),b=g.oppScore,n=g.roster.filter(id=>played(stat(g,id))).length,st=g.status!=='final'?'<span class="badge D">Entwurf</span>':a>b?'<span class="badge W">Sieg</span>':a<b?'<span class="badge L">Niederlage</span>':'<span class="badge D">Remis</span>';
   return `<div class="gi"><div class="main" data-a="open" data-id="${g.id}"><b>${esc(g.team)} ${a} : ${b} ${esc(g.opp)}</b><br><small>${fd(g.date)} · ${n} Spieler eingesetzt</small></div>${st}<button class="btn s" data-a="exg" data-id="${g.id}">CSV</button><button class="btn s" data-a="exj" data-id="${g.id}">JSON</button><button class="btn s d" data-a="delg" data-id="${g.id}">Löschen</button></div>`};
- return `<div class="row"><button class="btn p sp" data-a="new">+ Neues Spiel</button><button class="btn" data-a="go" data-v="players">Spieler</button><button class="btn" data-a="go" data-v="season">Saison</button></div>
+ return `${banner('')}<div class="row"><button class="btn p sp" data-a="new">+ Neues Spiel</button><button class="btn" data-a="go" data-v="players">Spieler</button><button class="btn" data-a="go" data-v="season">Saison</button></div>
  ${dr.length?'<h2>Entwürfe – nicht abgeschlossen</h2>'+dr.map(item).join(''):''}<h2>Spielarchiv</h2>${fi.length?fi.map(item).join(''):'<p class="mut">Noch keine abgeschlossenen Spiele. Starte mit „Neues Spiel“.</p>'}`}
 function vNew(){title('Neues Spiel');if(!S.players.length)return`<div class="card"><p>Lege zuerst Spieler an.</p><button class="btn p" data-a="go" data-v="players">Spieler anlegen</button></div>`;
  const last=[...S.games].sort((a,b)=>b.created-a.created)[0];NEW.team??=last?last.team:'';NEW.m??=Object.fromEntries(S.players.map(p=>[p.id,2]));
@@ -91,7 +91,7 @@ function vLeagues(){title('Liga & Saison');
  return `<div class="card"><b>Neue Liga</b><label>Liga / Wettbewerb</label><input id="ln" placeholder="z. B. U14 Bezirksliga"><label>Saison</label><input id="ls" placeholder="2026/27"><label>Eigene Mannschaft</label><input id="lo" placeholder="Name genau wie im Spielplan"><br><br><button class="btn p" data-a="newl">Liga anlegen</button></div>
  ${S.leagues.map(l=>`<div class="gi"><div class="main" data-a="openl" data-id="${l.id}"><b>${esc(l.name)}</b><br><small>${esc(l.season)} · ${esc(l.own)} · ${l.games.length} Spiele</small></div><button class="btn s d" data-a="dell" data-id="${l.id}">Löschen</button></div>`).join('')||'<p class="mut">Noch keine Liga angelegt.</p>'}`}
 function vLeague(){const l=lg();title(l.name);const tb=ltable(l),fx=[...l.games].sort((a,b)=>(a.date+a.time).localeCompare(b.date+b.time));
- return `<button class="btn" data-a="go" data-v="leagues">‹ Ligen</button><h2>${esc(l.name)} <small>${esc(l.season)}</small></h2>
+ return `${banner(l.own)}<button class="btn" data-a="go" data-v="leagues">‹ Ligen</button><h2>${esc(l.name)} <small>${esc(l.season)}</small></h2>
  <div class="tw"><table><thead><tr>${['Team','Sp','S','N','Körbe','Diff','Pkt'].map(h=>`<th>${h}</th>`).join('')}</tr></thead><tbody>${tb.map(t=>`<tr><td>${isOwn(l,t.n)?'★ ':''}${esc(t.n)}</td><td>${t.sp}</td><td>${t.w}</td><td>${t.l}</td><td>${t.pf}:${t.pa}</td><td>${t.d>0?'+':''}${t.d}</td><td><b>${t.pts}</b></td></tr>`).join('')}</tbody></table></div>
  <p class="mut"><small>Punkte: Sieg ${l.pw}, Niederlage ${l.pl}. Sortierung: Punkte, Korbdifferenz, erzielte Körbe.</small></p>
  <div class="row" style="margin:12px 0"><button class="btn p" data-a="newf">+ Spiel</button><button class="btn" data-a="icsimp">Spielplan importieren (.ics)</button></div>
@@ -127,7 +127,28 @@ function parseCmd(raw,g){const t=raw.toLowerCase().replace(/[.,!?]/g,' ').replac
  else if(/offensiv/.test(rest))type='oreb';else if(/defensiv/.test(rest))type='dreb';else if(/rebound/.test(rest))type='reb';else if(/assist|vorlage/.test(rest))type='ast';
  else if(/steal|ballgewinn/.test(rest))type='stl';else if(/block/.test(rest))type='blk';else if(/turnover|ballverlust|verlust/.test(rest))type='tov';else if(/foul/.test(rest))type='pf';
  return pid&&type?{pid,num,type}:null}
-function scoreBar(g){return `<div class="score"><div><small>${esc(g.team)}</small><b>${tpts(g)}</b></div><div><div class="q">${[1,2,3,4].map(q=>`<button class="${g.q==q?'on':''}" data-a="q" data-q="${q}">Q${q}</button>`).join('')}</div></div><div><small>${esc(g.opp)}</small><b>${g.oppScore}</b><div class="op">${[1,2,3,-1].map(d=>`<button data-a="opp" data-d="${d}">${d>0?'+':'−'}${Math.abs(d)}</button>`).join('')}</div></div></div>`}
+/* ---------- Teamdesign pro Mannschaft (Farbe, Logo, Foto) ---------- */
+let TK='';const tkey=k=>(k||'').trim().toLowerCase();
+const TH={all(){try{const a=JSON.parse(localStorage.getItem('hoops.themes')||'null');if(a)return a;const o=JSON.parse(localStorage.getItem('hoops.theme')||'null');return o?{'':o}:{}}catch{return{}}},
+ own(k){return TH.all()[tkey(k)]||{}},get(k){const a=TH.all();return a[tkey(k)]||a['']||{}},
+ set(k,t){const a=TH.all();a[tkey(k)]={...t,n:k};try{localStorage.setItem('hoops.themes',JSON.stringify(a));return true}catch{alert('Speicher voll. Bitte ein kleineres Bild wählen.');return false}},
+ del(k){const a=TH.all();delete a[tkey(k)];try{localStorage.setItem('hoops.themes',JSON.stringify(a))}catch{}}};
+const onCol=h=>{const n=parseInt(String(h).replace('#',''),16),r=n>>16&255,g=n>>8&255,b=n&255;return(.299*r+.587*g+.114*b)>150?'#111':'#fff'};
+function themeTeam(){const g=V.id&&S.games.find(x=>x.id===V.id);if((V.n==='game'||V.n==='pstat')&&g)return g.team;if(V.n==='league'||V.n==='fix'){const l=lg();return l?l.own:''}return V.n==='theme'?TK:''}
+function applyTheme(k){const t=TH.get(k),st=document.documentElement.style,c=/^#[0-9a-f]{6}$/i.test(t.c||'')?t.c:'#ff7a1a';st.setProperty('--o',c);st.setProperty('--on',onCol(c));st.setProperty('--logo',t.logo&&t.bg!==0?`url(${t.logo})`:'none')}
+const tlogo=k=>{const t=TH.get(k);return t.logo?`<img class="tl" src="${t.logo}" alt="">`:''};
+const banner=k=>{const t=TH.get(k);return t.photo?`<img class="ph" src="${t.photo}" alt="">`:''};
+const imgTo=async(f,max,type,q)=>{const bm=await createImageBitmap(f),k=Math.min(1,max/Math.max(bm.width,bm.height)),c=document.createElement('canvas');c.width=Math.round(bm.width*k);c.height=Math.round(bm.height*k);c.getContext('2d').drawImage(bm,0,0,c.width,c.height);return c.toDataURL(type,q)};
+function vTheme(){title('Teamdesign');const m=new Map([['','Standard (alle Mannschaften)']]);
+ [...S.games.map(g=>g.team),...S.leagues.map(l=>l.own),...Object.values(TH.all()).map(x=>x.n)].filter(Boolean).forEach(n=>{if(!m.has(tkey(n)))m.set(tkey(n),n)});
+ const t=TH.own(TK),c=t.c||'#ff7a1a',P=['#ff7a1a','#2f7bff','#e53935','#1fb36b','#8e44ec','#f5c518','#00b8d9','#e84393'];
+ return `<div class="chips">${[...m].map(([k,n])=>`<button class="chip ${k===tkey(TK)?'on':''}" data-a="themet" data-t="${esc(k===''?'':n)}">${esc(n)}</button>`).join('')}</div>
+ <div class="row" style="margin:10px 0"><input id="tn" placeholder="Neue Mannschaft" style="flex:1"><button class="btn" data-a="themeadd">Hinzufügen</button></div>
+ ${banner(TK)}<div class="card"><b>Teamfarbe</b><div class="chips" style="margin:10px 0">${P.map(x=>`<button class="sw ${x.toLowerCase()===c.toLowerCase()?'on':''}" style="background:${x}" data-a="themec" data-c="${x}" aria-label="${x}"></button>`).join('')}</div><label>Eigene Farbe</label><input id="tc" type="color" value="${c}" style="width:90px;padding:3px"></div>
+ <div class="card"><b>Vereinslogo</b><p class="mut">Im Spielstand und dezent im Hintergrund.</p><div class="row">${t.logo?`<img src="${t.logo}" style="height:64px;width:64px;object-fit:contain" alt="">`:''}<button class="btn" data-a="themelogo">${t.logo?'Logo ändern':'Logo wählen'}</button>${t.logo?`<button class="btn" data-a="themebg">Hintergrund: ${t.bg===0?'aus':'an'}</button><button class="btn d" data-a="themenologo">Entfernen</button>`:''}</div></div>
+ <div class="card"><b>Mannschaftsfoto</b><p class="mut">Erscheint als Banner auf der Startseite und in der Liga-Ansicht dieser Mannschaft.</p><div class="row"><button class="btn" data-a="themephoto">${t.photo?'Foto ändern':'Foto wählen'}</button>${t.photo?'<button class="btn d" data-a="themenophoto">Entfernen</button>':''}</div></div>
+ <button class="btn d" data-a="themedel">${TK===''?'Standard zurücksetzen':'Design dieser Mannschaft löschen'}</button>`}
+function scoreBar(g){return `<div class="score"><div>${tlogo(g.team)}<small>${esc(g.team)}</small><b>${tpts(g)}</b></div><div><div class="q">${[1,2,3,4].map(q=>`<button class="${g.q==q?'on':''}" data-a="q" data-q="${q}">Q${q}</button>`).join('')}</div></div><div><small>${esc(g.opp)}</small><b>${g.oppScore}</b><div class="op">${[1,2,3,-1].map(d=>`<button data-a="opp" data-d="${d}">${d>0?'+':'−'}${Math.abs(d)}</button>`).join('')}</div></div></div>`}
 function vGame(){const g=cur();title(g.team+' – '+g.opp);const tab=V.tab||'b',oc=onc(g),ben=g.roster.filter(id=>!oc.includes(id));
  const tabs=`<div class="tabs">${[['b','Board'],['p','Spieler'],['w','Wechsel'],['x','Box Score']].map(([k,t])=>`<button class="btn ${tab==k?'p':''}" data-a="tab" data-t="${k}">${t}</button>`).join('')}</div>`;
  const bb=(k,c)=>`<button class="sb ${c}" data-a="pickp" data-t="${k}">${LBL[k]}<em>${SUB[k]||''}</em></button>`;
@@ -256,7 +277,15 @@ const act={
  mic(){const R=window.SpeechRecognition||window.webkitSpeechRecognition;if(!R)return alert('Spracherkennung wird auf diesem Gerät oder in diesem Browser nicht unterstützt.');const r=new R();r.lang='de-DE';r.onresult=e=>{const tx=e.results[0][0].transcript;V.vc=parseCmd(tx,cur())||{err:tx};V.keep=1;render()};r.onerror=()=>alert('Spracherkennung fehlgeschlagen. Sie braucht auf dem iPad meist Internet und Mikrofon-Erlaubnis.');try{r.start()}catch{}},
  vcx(){V.vc=null;V.keep=1;render()},
  async vcok(){const g=cur(),c=V.vc;V.vc=null;if(c.undo)return act.undoall();g.events.push({id:uid(),pid:c.pid,type:c.type,q:g.q,t:0,src:'voice'});await saveG(g);V.keep=1;render()},
- pfm(d){PF.m=d.m;V.keep=1;render()},
+ themet(d){TK=d.t;V.keep=1;render()},
+ themeadd(){const n=$('#tn').value.trim();if(!n)return;TK=n;if(!TH.all()[tkey(n)])TH.set(n,{});V.keep=1;render()},
+ themec(d){TH.set(TK,{...TH.own(TK),c:d.c});V.keep=1;render()},
+ themelogo(){$('#logo').click()},themephoto(){$('#tphoto').click()},
+ themebg(){const t=TH.own(TK);TH.set(TK,{...t,bg:t.bg===0?1:0});V.keep=1;render()},
+ themenologo(){const t={...TH.own(TK)};delete t.logo;TH.set(TK,t);V.keep=1;render()},
+ themenophoto(){const t={...TH.own(TK)};delete t.photo;TH.set(TK,t);V.keep=1;render()},
+ themedel(){TH.del(TK);V.keep=1;render()},
+  pfm(d){PF.m=d.m;V.keep=1;render()},
  pickp(d){V.pick={t:d.t};V.keep=1;render()},reas(d){V.pick={re:+d.i};V.keep=1;render()},cancelpick(){V.pick=null;V.keep=1;render()},
  async assign(d){const g=cur(),p=V.pick;if(!p)return;if(p.re!=null)g.events[p.re].pid=d.id;else g.events.push({id:uid(),pid:d.id,type:p.t,q:g.q,t:0,src:'manual'});V.pick=null;await saveG(g);V.keep=1;render()},
  async undoall(){const g=cur();g.events.pop();await saveG(g);V.keep=1;render()},
@@ -282,14 +311,16 @@ const act={
  exs(){const gs=fgames();dl('saison.csv',csv([['Spieler',...COLS.map(c=>c[0])],...S.players.map(p=>row(p,gs)).filter(r=>r.gp).map(r=>[r.p.name,...COLS.map(c=>r[c[1]]==null?'':(+r[c[1]].toFixed(2)))])]),'text/csv')},
  exg(d){const g=S.games.find(x=>x.id===d.id);dl(`spiel-${g.date}-${g.opp}.csv`,gameCsv(g),'text/csv')},
  exj(d){const g=S.games.find(x=>x.id===d.id);dl(`spiel-${g.date}-${g.opp}.json`,JSON.stringify({players:S.players.filter(p=>g.roster.includes(p.id)),games:[g]}),'application/json')},
- exall(){dl(`hoops-backup-${today()}.json`,JSON.stringify({v:2,players:S.players,games:S.games,leagues:S.leagues}),'application/json')},imp(){$('#imp').click()}
+ exall(){dl(`hoops-backup-${today()}.json`,JSON.stringify({v:3,players:S.players,games:S.games,leagues:S.leagues,themes:TH.all()}),'application/json')},imp(){$('#imp').click()}
 };
 document.addEventListener('click',e=>{const el=e.target.closest('[data-a]');if(!el){if(!e.target.closest('#drawer'))$('#drawer').hidden=true;return}if(el.tagName==='INPUT'&&el.type==='checkbox'){return}if(el.tagName==='SELECT')return;const f=act[el.dataset.a];if(f){if(el.dataset.a==='court')e.stopPropagation();f(el.dataset,el,e)}});
-document.addEventListener('change',e=>{const el=e.target;if(el.dataset.a==='fm')act.fm({},el);else if(el.dataset.a==='cmpt')act.cmpt(el.dataset);else if(el.id==='fn'){F.n=Math.max(1,+el.value||1);render()}else if(el.id==='ff'){F.from=el.value;render()}else if(el.id==='ft'){F.to=el.value;render()}else if(el.id==='pf1'){PF.from=el.value;V.keep=1;render()}else if(el.id==='pf2'){PF.to=el.value;V.keep=1;render()}});
-for(const[id,ac]of[['imp','.json,application/json'],['ics','.ics,text/calendar'],['pic','image/*']])if(!$('#'+id)){const i=document.createElement('input');i.type='file';i.id=id;i.accept=ac;i.hidden=true;document.body.append(i)}
-{const dr=$('#drawer');if(dr&&dr.querySelector&&dr.insertAdjacentHTML&&!dr.querySelector('[data-v="leagues"]'))dr.insertAdjacentHTML('afterbegin','<button data-a="go" data-v="leagues">Liga &amp; Spielplan</button>')}
-$('#imp').onchange=async e=>{const f=e.target.files[0];if(!f)return;try{const d=JSON.parse(await f.text());if(!Array.isArray(d.players)||!Array.isArray(d.games))throw 0;for(const p of d.players)await put('players',p);for(const g of d.games){g.run=false;await saveG(g)}for(const l of d.leagues||[])await put('league',l);await load();alert('Import abgeschlossen.');go('home')}catch{alert('Die Datei ist keine gültige Sicherung.')}e.target.value=''};
+document.addEventListener('change',e=>{const el=e.target;if(el.dataset.a==='fm')act.fm({},el);else if(el.dataset.a==='cmpt')act.cmpt(el.dataset);else if(el.id==='fn'){F.n=Math.max(1,+el.value||1);render()}else if(el.id==='ff'){F.from=el.value;render()}else if(el.id==='ft'){F.to=el.value;render()}else if(el.id==='tc'){TH.set(TK,{...TH.own(TK),c:el.value});V.keep=1;render()}else if(el.id==='pf1'){PF.from=el.value;V.keep=1;render()}else if(el.id==='pf2'){PF.to=el.value;V.keep=1;render()}});
+for(const[id,ac]of[['imp','.json,application/json'],['ics','.ics,text/calendar'],['pic','image/*'],['logo','image/*'],['tphoto','image/*']])if(!$('#'+id)){const i=document.createElement('input');i.type='file';i.id=id;i.accept=ac;i.hidden=true;document.body.append(i)}
+{const dr=$('#drawer');if(dr&&dr.querySelector&&dr.insertAdjacentHTML)for(const[v,t]of[['theme','Teamdesign'],['leagues','Liga &amp; Spielplan']])if(!dr.querySelector('[data-v="'+v+'"]'))dr.insertAdjacentHTML('afterbegin','<button data-a="go" data-v="'+v+'">'+t+'</button>')}
+$('#imp').onchange=async e=>{const f=e.target.files[0];if(!f)return;try{const d=JSON.parse(await f.text());if(!Array.isArray(d.players)||!Array.isArray(d.games))throw 0;for(const p of d.players)await put('players',p);for(const g of d.games){g.run=false;await saveG(g)}for(const l of d.leagues||[])await put('league',l);if(d.themes&&typeof d.themes==='object')try{localStorage.setItem('hoops.themes',JSON.stringify({...TH.all(),...d.themes}))}catch{}await load();alert('Import abgeschlossen.');go('home')}catch{alert('Die Datei ist keine gültige Sicherung.')}e.target.value=''};
 $('#ics').onchange=async e=>{const f=e.target.files[0];e.target.value='';if(!f)return;const l=lg();if(!l)return;try{const r=importICS(l,await f.text());await put('league',l);render();alert(`Import: ${r.add} neu, ${r.upd} aktualisiert, ${r.skip} übersprungen.`+(r.ownFound?'':'\nAchtung: Deine eigene Mannschaft „'+l.own+'“ kommt im Spielplan nicht vor. Bitte den Namen prüfen.'))}catch{alert('Die Datei konnte nicht gelesen werden.')}};
+$('#logo').onchange=async e=>{const f=e.target.files[0];e.target.value='';if(!f)return;try{TH.set(TK,{...TH.own(TK),logo:await imgTo(f,200,'image/png')});V.keep=1;render()}catch{alert('Das Bild konnte nicht gelesen werden.')}};
+$('#tphoto').onchange=async e=>{const f=e.target.files[0];e.target.value='';if(!f)return;try{TH.set(TK,{...TH.own(TK),photo:await imgTo(f,720,'image/jpeg',.65)});V.keep=1;render()}catch{alert('Das Bild konnte nicht gelesen werden.')}};
 $('#pic').onchange=async e=>{const f=e.target.files[0];if(!f)return;const keep=['pn','pr','pb','ph','pw'].map(i=>[i,$('#'+i).value]),pp=[...$('#pp').selectedOptions].map(o=>o.value);const bm=await createImageBitmap(f),c=document.createElement('canvas');c.width=c.height=128;const z=Math.min(bm.width,bm.height);c.getContext('2d').drawImage(bm,(bm.width-z)/2,(bm.height-z)/2,z,z,0,0,128,128);PIC=c.toDataURL('image/jpeg',.8);render();keep.forEach(([i,v])=>$('#'+i).value=v);document.querySelectorAll('#pp option').forEach(o=>o.selected=pp.includes(o.value));e.target.value=''};
 document.addEventListener('visibilitychange',()=>{const g=V.id&&cur();if(g&&document.hidden)saveG(g)});
 (async()=>{db=await open();await load();S.games.forEach(g=>{g.run=false});if(navigator.storage&&navigator.storage.persist)navigator.storage.persist();render();lvFlush();addEventListener('online',()=>{lvFlush();const g=S.games.find(x=>x.live);if(g)pushLive(g)});if('serviceWorker'in navigator)navigator.serviceWorker.register('service-worker.js')})();
