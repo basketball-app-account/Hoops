@@ -1,0 +1,16 @@
+<!DOCTYPE html><html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><meta name="referrer" content="no-referrer"><title>Live-Spiel</title>
+<style>:root{--bg:#0e0e10;--c:#1a1a1e;--l:#2e2e35;--o:#ff7a1a;--m:#9a9aa3}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:#fff;font:16px/1.35 system-ui,-apple-system,sans-serif}main{max-width:760px;margin:0 auto;padding:14px}
+.sc{display:grid;grid-template-columns:1fr auto 1fr;gap:8px;text-align:center;background:var(--c);border:1px solid var(--l);border-radius:14px;padding:14px}.sc b{display:block;font-size:48px;color:var(--o);line-height:1}.sc div:last-child b{color:#fff}small,.m{color:var(--m)}
+table{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums}th,td{padding:8px 6px;text-align:right;border-bottom:1px solid var(--l)}td:first-child,th:first-child{text-align:left}.on td:first-child{color:var(--o)}.w{overflow-x:auto;border:1px solid var(--l);border-radius:12px;margin-top:12px}
+.ev div{padding:6px 0;border-bottom:1px solid var(--l)}h2{font-size:18px;margin:18px 0 8px}</style></head><body><main id="m"><p class="m">Lade …</p></main><script>
+const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+function view(d){if(!d)return '<p>Dieser Link ist nicht (mehr) aktiv.</p>';const P=d.players||[],E=d.events||[],nm=p=>'#'+esc(p.n)+(p.name?' '+esc(p.name):'');
+ const T=['pts','reb','ast','stl','blk','tov','pf'].map(k=>P.reduce((a,p)=>a+(+p[k]||0),0));
+ return `<div class="sc"><div><small>${esc(d.team)}</small><b>${+d.own||0}</b></div><div><small>${d.status==='final'?'Endstand':'Viertel '+(+d.q||1)}</small></div><div><small>${esc(d.opp)}</small><b>${+d.oppScore||0}</b></div></div>
+ <div class="w"><table><thead><tr>${['Spieler','PTS','REB','AST','STL','BLK','TO','PF'].map(h=>`<th>${h}</th>`).join('')}</tr></thead><tbody>${P.map(p=>`<tr class="${p.on?'on':''}"><td>${nm(p)}</td><td>${+p.pts||0}</td><td>${+p.reb||0}</td><td>${+p.ast||0}</td><td>${+p.stl||0}</td><td>${+p.blk||0}</td><td>${+p.tov||0}</td><td>${+p.pf||0}</td></tr>`).join('')}<tr><td><b>Team</b></td>${T.map(x=>`<td><b>${x}</b></td>`).join('')}</tr></tbody></table></div>
+ <h2>Spielverlauf</h2><div class="ev">${E.map(e=>`<div><small>Q${+e.q||1}</small> ${nm(e)} · ${esc(e.type)}</div>`).join('')||'<p class="m">Noch keine Aktionen.</p>'}</div><p class="m"><small>Orange = aktuell auf dem Feld. Aktualisiert: ${new Date(+d.ts||0).toLocaleTimeString()}</small></p>`}
+async function tick(){const q=new URLSearchParams(location.search),db=q.get('db')||'',id=q.get('id')||'',m=document.getElementById('m');
+ if(!/^https:\/\/[a-z0-9.-]+\.(firebasedatabase\.app|firebaseio\.com)$/i.test(db)||!/^[0-9a-f]{32}$/.test(id)){m.innerHTML='<p>Ungültiger Link.</p>';return}
+ try{const r=await fetch(`${db}/live/${id}.json`,{cache:'no-store'});if(!r.ok)throw 0;m.innerHTML=view(await r.json())}catch{if(!m.dataset.ok)m.innerHTML='<p class="m">Keine Verbindung. Es wird weiter versucht …</p>'}}
+tick();setInterval(tick,5000);
+</script></body></html>
